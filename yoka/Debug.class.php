@@ -270,7 +270,12 @@ class Debug
 		}
 		if($results === 'Temporary Value'){
            array_push(self::$log_table, array('[临时调试]', $label, $caller));
-        }else array_push(self::$log_table, array($label, $results, $caller));
+        }else{
+        	if(is_string($results) && mb_detect_encoding($string, 'UTF-8') !== 'UTF-8') {
+        		$results = '非UTF-8编码，长度：' . strlen($results);
+        	}
+        	array_push(self::$log_table, array($label, $results, $caller));
+        }
 	}
 	/**
 	 * 即时写入日志文件（在无法正常输出Debug回调时使用）
@@ -848,6 +853,7 @@ class Debug
 				if($db){
 					if(self::$db_log_mysql)foreach (self::$db_table as $v){
 						if(! preg_match('/insert|update|delete/i',$v[3])) continue; //全部记录太大了
+						if(preg_match('/^INSERT INTO debug_log SET/i',$v[3])) continue; //dlog不做重复记录
 						$values[] = "('".self::get_real_ip()."','".$_SERVER["SERVER_ADDR"]."','db','','','".addslashes($_SERVER["REQUEST_URI"])."','" .addslashes($v[0]). ":" .addslashes($v[1]). "','" .addslashes($v[2]). "','" .addslashes($v[3]). "','" .addslashes(var_export($v[4], true)). "')";
 					}
 					if(self::$debug_log_mysql)foreach (self::$log_table as $v){

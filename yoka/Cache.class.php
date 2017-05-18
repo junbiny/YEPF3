@@ -2,13 +2,11 @@
 /**
  * @name Cache.class.php
  * @desc 通用缓冲机制控制类,目前只支持Memcached内存缓存
- * @author 曹晓冬
- * @createtime 2008-09-10 02:32
- * @updatetime 2009-03-20 06:12
  * @usage：
- * $cache_obj = Cache::getInstance('default');  //default为cache.config.php中$CACHE['memcached']配置的服务名称
- * $cache_obj->get($key); //$key为唯一的字符串标识
+ * 	$cache_obj = Cache::getInstance('default');  //default为cache.config.php中$CACHE['memcached']配置的服务名称
+ * 	$cache_obj->get($key); //$key为唯一的字符串标识
  * @update 2014-09-16 by jimmy.dong@gmail.com  自动识别memcache插件类型，避免memcache与memcached冲突
+ * @update 2017-02-26 by jimmy.dong@gmail.com  支持后备服务器设定
  */
 namespace yoka;
 use yoka\Debug as Debug;
@@ -53,12 +51,12 @@ class Cache implements \yoka\CacheInterface
 	 * @name __construct
 	 * @desc 构造函数
 	 * @param void
-	 * @return object instance of Cache
+	 * @return \yoka\Cache
 	 * @access protected
 	 *
 	 */
 	
-    private function __construct($item = '', $serverList = array(), $type = 'memcached')
+    private function __construct($item = '', $serverList = array(), $backupList = array(), $type = 'memcached')
     {
     	if(class_exists('Memcached') && method_exists('Memcached', 'setOption')) $this->memcacheType = 'Memcached';
     	else $this->memcacheType = 'Memcache';
@@ -67,14 +65,26 @@ class Cache implements \yoka\CacheInterface
     	{
 			if($this->memcacheType == 'Memcache') $this->cache = new \yoka\Memcached();
 			else $this->cache = new Memcached();
+			//主力服务器
 			if(!empty($serverList))
 			{
 				foreach($serverList as $v)
 				{
-			           $is_sucess = $this->cache->addServer($v['host'],$v['port']);
-			           if($is_sucess === false)
-			                         Debug::log('memcacheConnectError','ip:'.$v['host'].":".$v['port'],__FILE__.':'.__LINE__);  
-			           $this->serverlist[] = array('ip' => $v['host'], 'port' => $v['port'], 'is_sucess'=>$is_sucess);				
+					$this->cache->addServer($v['host'],$v['port']);
+					$this->serverlist[] = array('ip' => $v['host'], 'port' => $v['port'], 'is_sucess'=>$is_sucess);				
+				}
+			}
+			//后备服务器：只有主力服务器全部添加失败时使用。集群设计应充分考虑数据一致性！
+			if(!empty($backupList) && !$this->cache->set('Y_CHECK_SERVER_ALIVE',1))
+			{
+				\yoka\Debug::log("Cache Warnning", "server is down, using backup now!");
+				if($this->memcacheType == 'Memcache') $this->cache = new \yoka\Memcached();
+				else $this->cache = new Memcached();
+				$this->serverlist = array();
+				foreach($backupList as $v)
+				{
+					$this->cache->addServer($v['host'],$v['port']);
+					$this->serverlist[] = array('ip' => $v['host'], 'port' => $v['port'], 'is_sucess'=>$is_sucess);
 				}
 			}
     	}
@@ -93,8 +103,7 @@ class Cache implements \yoka\CacheInterface
      * @name getInstance
      * @desc 单件模式调用Cache类入口
      * @param string $item
-     * @return object instance of Cache
-     * @access public
+     * @return Cache
      **/
     public static function getInstance($item = null)
     {
@@ -109,9 +118,13 @@ class Cache implements \yoka\CacheInterface
 			{
 				$config = $CACHE['memcached'][$item];
 				$list = $config['server'];
+				$backup = $config['backup'];
 				$key = $item;
+			}else{
+				\yoka\Debug::log('Cache Error','无配置项:' . $item);
+				return false;
 			}
-			$obj[$item] = new Cache($item, $list);
+			$obj[$item] = new Cache($item, $list, $backup);
 			Cache::$instance = $obj;
 		}
     	return $obj[$item];
@@ -126,10 +139,10 @@ class Cache implements \yoka\CacheInterface
      * @return Boolean
      */
     public function add($cacheKey, $cacheValue, $lifetime = null) {
-    	if($lifetime === null) $lifetime = self::$default_lifetime;
-    	$begin_microtime = Debug::getTime();
+    	if(empty($cacheKey)) return false;
         $cacheKey = $this->getKey($cacheKey);
-        if(empty($cacheKey)) return false;
+        if($lifetime === null) $lifetime = self::$default_lifetime;
+    	$begin_microtime = Debug::getTime();
         $re = $this->cache->add($cacheKey, $cacheValue, $lifetime);
         Debug::cache($this->_getServer(), $cacheKey, Debug::getTime() - $begin_microtime, 'add', $re);
         return $re;
@@ -139,18 +152,18 @@ class Cache implements \yoka\CacheInterface
 	 * @desc 将数据插入缓冲中
 	 * @param string $cacheKey 字符串标识
 	 * @param mixed $cacheValue 字符串对应的值
-	 * @param int $lifetime 缓存的生命周期
+	 * @param int $lifetime 缓存的生命周期(缺省值：self::$default_lifetime)
 	 * @return boolean 
 	 * @access public
 	 *
 	 */
     public function set($cacheKey, $cacheValue, $lifetime = null)
     {
+    	if(empty($cacheKey)) return false;
+        $cacheKey = $this->getKey($cacheKey);
     	if($lifetime === null) $lifetime = self::$default_lifetime;
     	$begin_microtime = Debug::getTime();
-    	$cacheKey = $this->getKey($cacheKey);
-    	if(empty($cacheKey)) return false;
-        if($this->cache->set($cacheKey, $cacheValue, $lifetime)){
+    	if($this->cache->set($cacheKey, $cacheValue, $lifetime)){
         	Debug::cache($this->_getServer(), $cacheKey, Debug::getTime() - $begin_microtime, 'set', true);
             return true;
         }
@@ -193,9 +206,9 @@ class Cache implements \yoka\CacheInterface
      **/
     public function clear($cacheKey)
     {
-    	$cacheKey = $this->getKey($cacheKey);
     	if(empty($cacheKey)) return false;
-        if($this->cache->delete($cacheKey)){
+        $cacheKey = $this->getKey($cacheKey);
+    	if($this->cache->delete($cacheKey)){
         	Debug::cache($this->_getServer(), $cacheKey, Debug::getTime() - $begin_microtime, 'del', true);
         	return true;
         }
@@ -218,9 +231,9 @@ class Cache implements \yoka\CacheInterface
 	 */
     public function get($cacheKey)
     {
-    	$returnValue = null;
+    	if(empty($cacheKey)) return false;
+		$returnValue = null;
 		$key = $this->getKey($cacheKey);
-		if(empty($key)) return false;
 		$begin_microtime = Debug::getTime();
         if(is_array($key) && $this->memcacheType == 'Memcached') $cacheValue = $this->cache->getMulti($key);
         else $cacheValue = $this->cache->get($key);
@@ -245,11 +258,19 @@ class Cache implements \yoka\CacheInterface
 	
 	/**
 	 * 计数器类的数字自增长
+	 * 【key不存在或不为整数时，自动设置为$value】
 	 */
 	public function increment($key, $value = 1)
 	{
+		$value = intval($value); //只允许以整数为步长
+		if(! $value) return false;
+		if(empty($key)) return false;
 		$key = $this->getKey($key);
-		return $this->cache->increment($key, $value);
+		$begin_microtime = Debug::getTime();
+        $re = $this->cache->increment($key, $value); //如果key不存在或不是整数，会返回false
+        if($re === false) $re = $this->cache->set($key, $value);
+		Debug::cache($this->_getServer(), $key, Debug::getTime() - $begin_microtime, 'increment', $re);
+        return $re;
 	}
 
     /**

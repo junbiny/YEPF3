@@ -2,9 +2,6 @@
 /**
  * @name DB.class.php
  * @desc YEPF数据库统一操作接口类,目前只支持MYSQL数据库
- * @author 曹晓冬
- * @createtime 2008-9-9 09:14
- * @updatetime
  * @usage 
  * $sql = "SELECT * FROM table_name";
  * $db_obj = DB::getInstance('default', true, __FILE__);
@@ -14,7 +11,6 @@
  * $db_obj->fetchAll($sql);
  * //获得首行首列
  * $db_obj->fetchSclare($sql);
- * @todo 封装一层BDB缓存
  * 
  * @update by jimmy.dong@gmail.com 2014-09-16
  * 【重要更新】
@@ -124,7 +120,7 @@ class DB
      * @param string $item    项目类型名称
      * @param bool	 $master  是否为主库
      * @param string $caller	调用数据库类的文件名, 废弃
-     * @return object instance of Cache
+     * @return \yoka\DB
      * @access public
      **/
 	public static function getInstance($item = 'default', $master = true)
@@ -260,8 +256,11 @@ class DB
 	 * @param string $table_name 数据库表名
 	 * @param array $info 需要更新的字段和值的数组
 	 * @param mix $where 更新条件 （ string: 兼容旧模式  ； array: 使用creteria模式）
-	 * @param $compat 是否兼容旧模式
-	 * @param where转换参数：$trim-去除空格, $strict-严格转换, $connector-默认连接符, $addslashes-是否进行addslashes处理 
+	 * @param bool $compat 是否兼容旧模式
+	 * @param bool $trim 自动去除空白
+	 * @param string $strict 严格转换(非严格'or'和'$or'都支持，严格模式必须'$or')
+	 * @param string $connector 条件连接形式 'AND' , 'OR'
+	 * @param bool $addslashes 是否自动添加addslashes(所有非REQUET提交的参数都应进行Addslashes)
 	 * @return rows affected *** 注意：旧模式为返回是否操作成功
 	 * @access public
 	 */
@@ -284,7 +283,10 @@ class DB
 		}
 		$sql .= " WHERE " . $where ;
 		$re = $this->exec($sql);
-		if($compat) return true;
+		if($compat) {
+			if($re === false) return false; //区分 statement===0
+			else return true;
+		}
 		else return $re;
 	}
 	/**

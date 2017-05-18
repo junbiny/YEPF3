@@ -1,5 +1,4 @@
 <?php
-namespace yoka;
 /**
  * 实体对象基类
  * @author jimmy.dong@gmail.com
@@ -13,32 +12,33 @@ namespace yoka;
  * 6， add/save/update/del 操作失败时返回false， 使用串列写法时请注意！
  * 7， update 默认禁止批量更新。使用$cretia['__FORCE__'] == true可执行批量更新。
  * 8， 手写SQL时不要直接使用表名，使用"%_table_%"。如必须使用表名（如JOIN操作），需在SQL后加上：";#@USE_TABLE_NAME" 标记
- * 9， 可配置默认缓冲。
- *
- * ************************************************** *
- *       重要：复制到其他项目时要修改缓冲配置         *
- * ************************************************** *
- *
+ * 
  * [更新]
- * 1， 不确定id是否存在的，请使用 geteById() 方法
+ * 1， 不确定id是否存在的，请使用 geteById() 方法 
  * 2， update 更新非本体数据时，需使用 __FORCE__ 参数
- * 3， 高性能开发时请优先使用带缓冲的方法：
- * 			getEntityById()		默认缓冲
- * 			getInstance(true)	参数设定缓冲	
- * 			fetchAllCached()	
+ * 3， 高性能开发时请优先使用带缓冲的方法：  
+ * 			getEntityById()
+ * 			getInstance()
+ * 			fetchAllRaw()
  * 4， 默认fetchAll仅获取1000条数据。获取数据较多时，可用fetchAllRaw提高性能(注意返回值不是id作为主键)。
  * 5， 获取大量数据时，应使用 query(xql, true) 方法获取迭代对象进行操作
  * 6,  批量更新较多数据时，应使用 stopAutoRefresh() ... restartAutoRefresh() 屏蔽缓存操作提高效率
  * 7， 增加了字段自动过滤，需在子类中定义 $filter_fields 。注意：仅对 add/save/replace/update 有效
  * 8， 增加snapshop 和 slim 方法。子类中使用 $default_slim 定义默认slim字段
- *
+ * 
  * [自定义主键]
- * 1， 支持非id作为主键。在子类中定义：static $pkey 。 
- * 2， 原有id为主键的无需任何调整，完全兼容
- * 参见：Pkey.class.php
- *
+ * 1， 支持非id作为主键。在子类中定义：static $pkey 。 参见：Pkey.class.php
+ * 
  */
+namespace DAO;
+use yoka\Debug;
+use yoka\Cache;
+use yoka\Log;
+use yoka\DB;
+use mdbao\User;
+
 class BaseModel{
+
 	public $db;
 	public $entity;
 	public static $_EnableBuffer = true;		//防止大数据量处理时内存不足
@@ -47,7 +47,7 @@ class BaseModel{
 	public static $cacheName = 'default';		//缺省缓冲名称
 	public $_stopAutoRefresh = false;			//禁止自动更新，用于批量操作。
 	private $ismaster = true; 					//默认使用主库
-
+	
 	// 数据自动过滤机制，在子类设置 $filter_fields 值（需要过滤的字段）
 	protected $filter_str = [" ","'","\r","\n","\t",'"', '(', ')', '（', '）', ',', '，', '“', '”'];
 	protected $filter_fields = [];
@@ -174,7 +174,6 @@ class BaseModel{
 	/**
 	 * 获取实例（默认不使用缓冲）
 	 * @param int $id
-	 * @return self
 	 */
 	public static function getById($id, $use_cache=false){
 		$table = static::$table;
@@ -259,7 +258,7 @@ class BaseModel{
 		// $pkey = static::$pkey?:'id';
 		$pkey = isset(static::$pkey)?static::$pkey:'id';
 		$class = get_called_class();
-
+		
 		//字符自动过滤
 		if ($this->filter_fields) {
 			foreach ($this->filter_fields as $field) {
@@ -268,7 +267,7 @@ class BaseModel{
 				}
 			}
 		}
-
+		
 		if($this->db->insert($table, $arr, $addslashes)){
 			$id = $this->db->insertId();
 			\yoka\Debug::log('insert-id', $id);
@@ -296,7 +295,7 @@ class BaseModel{
 
 		$table = static::$table;
 		$sql = "REPLACE INTO `".$table."` SET " ;
-
+		
 		//字符自动过滤
 		if ($this->filter_fields) {
 			foreach ($this->filter_fields as $field) {
@@ -305,7 +304,7 @@ class BaseModel{
 				}
 			}
 		}
-
+		
 		foreach ($arr as $k => $v)
 		{
 			if($v === null) $s .= "`{$k}` = NULL,";
@@ -415,14 +414,14 @@ class BaseModel{
 				}
 			}
 		}
-
+		
 		if($cretia){ //条件更新，使用时请谨慎。不指明 __FORCE__ 参数的一律禁用！
 			if($cretia['__FORCE__'] == true){	//强制更新
 				unset($cretia['__FORCE__']);
-				$re = $this->db->update($table, $info, $cretia);
-				return $re;
+				$this->db->update($table, $info, $cretia);
+				return true;
 			}else{
-				throw new \Exception('错误：不允许修改该对象之外的记录。请参考\$cretia["__FORCE__"]', -1);
+				throw new \Exception('错误：当前版本不允许修改该对象之外的记录', -1);
 				return false;
 			}
 		}elseif($info[$pkey]){
@@ -430,8 +429,7 @@ class BaseModel{
 			/*注意：保护update_time自动变量字段*/
 			if(isset($info['update_time']))unset($info['update_time']);
 
-			$re = $this->db->update($table, $info, array($pkey=>$info[$pkey]), true, true, false, 'AND', $addslashes);
-			if(! $re){
+			if(! $this->db->update($table, $info, array($pkey=>$info[$pkey]), true, true, false, 'AND', $addslashes)){
 				//更新操作不成功
 				return false;
 			}
@@ -446,8 +444,7 @@ class BaseModel{
 			/*注意：保护update_time自动变量字段*/
 			unset($info['update_time']);
 			//\yoka\Debug::log('update:id', $this->entity);
-			$re = $this->db->update($table, $info, array($pkey=>$this->entity[$pkey]), true, true, false, 'AND', $addslashes);
-			if(! $re){
+			if(! $this->db->update($table, $info, array($pkey=>$this->entity[$pkey]), true, true, false, 'AND', $addslashes)){
 				//更新操作不成功
 				return false;
 			}
@@ -459,7 +456,7 @@ class BaseModel{
 			$this->_refresh($class, $this->entity[$pkey]); //调用子类中刷新方法
 
 		}else{
-			$this->db->err('BaseModel Error: update without primary key - ' . var_export($info, true));
+			$this->db->err('BaseModel Error: update without ID - ' . var_export($info, true));
 			return false;
 		}
 		//\yoka\Debug::log('entity', $this->entity);
@@ -478,9 +475,8 @@ class BaseModel{
 		$class = get_called_class();
 		if(!$this->entity[$pkey])return false;
 		$step = floatval($step);
-		$this->db->query("update `{$table}` set `{$key}` = `{$key}` + {$step} where {$pkey}=" . $this->entity[$pkey]);
-		$this->entity = $this->db->fetchOne("select * from `{$table}` where {$pkey}=" . $this->entity[$pkey]);
-		
+		$this->db->query("update `{$table}` set `{$key}` = `{$key}` + {$step} where id=" . $this->entity[$pkey]);
+
 		$cache = \yoka\Cache::getInstance(self::$cacheName);
 		$key = "BaseModel_Cache_" . $table . '_' . $this->entity[$pkey];
 		$cache->del($key);
@@ -492,24 +488,20 @@ class BaseModel{
 	/**
 	 * 查询单条数据
 	 * @param mixed $mix 数组（creteria格式）或 字符串：where条件 或 %_table_% 的全SQL
-	 * @param array $assist [order, limit]  eg: ['order'=>'id desc']
 	 * @return \model\BaseModel
 	 */
-	public function fetchOne($mix, $assist = []){
+	public function fetchOne($mix){
 		$table = static::$table;
-		if($assist['order'])$order = ' order by '. $assist['order'];
-		else $order = '';
-		
 		if(null == $mix){
-			$re = $this->db->fetchOne("select * from `{$table}` {$order} limit 1");
+			$re = $this->db->fetchOne("select * from `{$table}` limit 1");
 		}elseif(is_array($mix)){ //creteria方式
-			$re = $this->db->fetchOne("select * from {$table} where %_creteria_% {$order} limit 1", $mix);
+			$re = $this->db->fetchOne("select * from {$table} where %_creteria_%", $mix);
 		}elseif (strpos(strtolower(trim($mix)), 'select') === 0) {
 			//普通sql方式
 			$sql = str_replace('%_table_%', "`{$table}`", $mix);
-			$re = $this->db->fetchOne($sql . " {$order} limit 1");
+			$re = $this->db->fetchOne($sql);
 		}else{
-			$re = $this->db->fetchOne("select * from {$table} where $mix {$order} limit 1");
+			$re = $this->db->fetchOne("select * from {$table} where $mix");
 		}
 
 		if(!$re)return false;
@@ -562,88 +554,24 @@ class BaseModel{
 		}
 	}
 
-	/**
-	 * 根据条件获取某一页的数据库记录
-	 * @author bandry
-	 * @date 2017-04-19
-	 * @param mixed $mix null|string|array('col'=>'val', 'col = 1', 'col'=>array(val1,val2))
-	 * @param number $page 页码
-	 * @param number $num  返回数量
-	 * @param string $orderby 排序，不加 order by
-	 * @throws \Exception
-	 * @return array|bool 数据或false
-	 */
-	public function fetchPage($mix = null, $page = 1, $num = 20, $orderby = '') {
-		$table = static::$table;
-		$start = ($page - 1) * $num;
-		if ($orderby && strpos($orderby, 'order by') === false) {
-			$orderby = ' order by ' . $orderby;
-		}
 
-		if (null == $mix) {
-			$sql = "select * from {$table} " . " {$orderby} limit {$start}, {$num}";
-		} else if (is_array($mix)){ // creteria 方式
-			$where = [];
-			foreach ($mix as $key=>$val) {
-				if (is_numeric($key)) {
-					$where[] = $val;
-				} else {
-					if (is_array($val)) {
-						$value = "'" . implode("','", $val) . "'";
-						$where[] = "{$key} in ({$value})";
-					} else {
-						$where[] = "{$key} = '{$val}'";
-					}
-				}
-			}
-			$where = implode(' and ', $where);
-			$sql = "select * from {$table} where {$where} " . " {$orderby} limit {$start}, {$num}";
-		} else if (strpos(strtolower($mix), 'select') === 0) {
-			// 普通sql方式
-			$sql = str_replace('%_table_%', "`{$table}`", $mix);
-			if ($orderby) {
-				$sql .= " {$orderby} ";
-			}
-			$sql .= " limit {$start}, {$num} ";
-		} else {
-			if (strpos($mix, 'where ') === false) {
-				$mix = " where " . $mix;
-			}
-			$sql = "select * from {$table} " . $mix . " {$orderby} limit {$start}, {$num} ";
-		}
-		$re = $this->db->fetchAll($sql);
-		return $re;
-	}
 	/**
-	 * 批量查询
-	 * 【注意】
-	 * 		对返回值进行了重整，id为主键。
-	 * 		如果不需要主键排序，请使用 fetchAllRaw
-	 * 		如果数据量非常大，请使用 query($sql, true)方式
-	 * @param mixed $mix 数组（creteria格式）或 where条件 或 %_table_%的全SQL
-	 * @param array $assist [order, limit]  eg: ['order'=>'id desc', 'limit'=>100]
-	 * 如果在普通SQL使用了order by/limit，则不应设置assist，避免冲突
+	 * 批量查询【注意，对返回值进行了重整，id为主键】
 	 * @return array(array, array ...)
 	 */
-	public function fetchAll($mix = null, $assist = []){
+	public function fetchAll($mix = null){
 		$table = static::$table;
-		if($assist['order'])$order = ' order by '. $assist['order'];
-		else $order = '';
-		if($assist['limit'])$limit = ' limit ' . $assist['limit'];
-		else $limit = '';
-		
 		$pkey = isset(static::$pkey)?static::$pkey:'id';
 		if(null == $mix){ //获取全部内容 【注意：强制切断1000行，防止崩溃！】
-			if($limit == '') $limit = ' limit 1000';
-			$re = $this->db->fetchAll("select * from {$table} {$order} {$limit}");
+			$re = $this->db->fetchAll("select * from {$table} limit 1000");
 		}elseif(is_array($mix)){ //creteria方式
-			$re = $this->db->fetchAll("select * from {$table} where %_creteria_% {$order} {$limit}", $mix);
+			$re = $this->db->fetchAll("select * from {$table} where %_creteria_%", $mix);
 		}elseif (strpos(strtolower($mix), 'select') === 0) {
 			//普通sql方式
 			$sql = str_replace('%_table_%', "`{$table}`", $mix);
-			$re = $this->db->fetchAll($sql . " {$order} {$limit}");
+			$re = $this->db->fetchAll($sql);
 		}else{
-			$re = $this->db->fetchAll("select * from {$table} where $mix {$order} {$limit}");
+			$re = $this->db->fetchAll("select * from {$table} where $mix");
 		}
 
 
@@ -661,51 +589,33 @@ class BaseModel{
 	}
 	/**
 	 * 功能与fetchAll相同，区别在于不做主键重整提高效率
-	 * 【注意】
-	 * 		一次读出全部数据，不能处理量非常大的数据
-	 * 		如果数据量非常大，请使用 query($sql, true)方式
-	 * @param mixed $mix 数组（creteria格式）或 where条件 或 %_table_%的全SQL
-	 * @param array $assist [order, limit]  eg: ['order'=>'id desc']
-	 * 如果在普通SQL使用了order by/limit，则不应设置assist，避免冲突
+	 * @param mixed $mix
 	 * @return array(array)
 	 */
-	public function fetchAllRaw($mix = null, $assist = []){
+	public function fetchAllRaw($mix = null){
 		$table = static::$table;
-		if($assist['order'])$order = ' order by '. $assist['order'];
-		else $order = '';
-		if($assist['limit'])$limit = ' limit ' . $assist['limit'];
-		else $limit = '';
-		
 		if(null == $mix){ //获取全部内容 【注意：强制切断1000行，防止崩溃！】
-			if($limit == '') $limit = ' limit 1000';
 			$re = $this->db->fetchAll("select * from {$table} limit 1000");
 		}elseif(is_array($mix)){ //creteria方式
-			$re = $this->db->fetchAll("select * from {$table} where %_creteria_% {$order} {$limit}", $mix);
+			$re = $this->db->fetchAll("select * from {$table} where %_creteria_%", $mix);
 		}elseif (strpos(strtolower($mix), 'select') === 0) {
 			//普通sql方式
 			$sql = str_replace('%_table_%', "`{$table}`", $mix);
-			$re = $this->db->fetchAll($sql . " {$order} {$limit}");
+			$re = $this->db->fetchAll($sql);
 		}else{
-			$re = $this->db->fetchAll("select * from {$table} where $mix {$order} {$limit}");
+			$re = $this->db->fetchAll("select * from {$table} where $mix");
 		}
 
 		return $re;
 	}
 	/**
-	 * 带缓存的批量查询
-	 * 【注意】
-	 *		$this->_DefaultCacheTime 控制缓存有效时间
-	 *		强制使用从库，请确保从库数据可用
-	 *		仅对多次重复查询有效
-	 *		如果数据量大，请使用 query($sql, true) 方式，防止堵塞Cache
-	 * @param mixed $mix 数组（creteria格式）或 where条件 或 %_table_%的全SQL
-	 * @param array $assist [order, limit]  eg: ['order'=>'id desc']
-	 * 如果在普通SQL使用了order by/limit，则不应设置assist，避免冲突
+	 * 带缓存的批量查询【注意：$this->_DefaultCacheTime】
+	 * @param mixed $mix
 	 * @return array(array)
 	 */
-	public function fetchAllCached($mix = null, $assist = []){
+	public function fetchAllCached($mix = null){
 		$table = static::$table;
-		$key = 'fetchAll_' . $table  . '_' . md5(json_encode($mix).json_encode($assist));
+		$key = 'fetchAll_' . $table  . '_' . md5(json_encode($mix));
 		$cache = \yoka\Cache::getInstance(self::$cacheName);
 		if(!SiteCacheForceRefresh){
 			$re = $cache->get($key);
@@ -713,7 +623,7 @@ class BaseModel{
 		}
 		// 强制使用从库
 		$this->db = DB::getInstance('default', true);
-		$re = $this->fetchAll($mix, $assist);
+		$re = $this->fetchAll($mix);
 		$cache->set($key, $re, self::$_DefaultCacheTime);
 		// 恢复
 		$this->db = DB::getInstance('default', $this->ismaster);
@@ -834,7 +744,7 @@ class BaseModel{
 			return false;
 		}
 	}
-
+	
 	/**
 	 * 获取摘要信息
 	 * @param array $info
@@ -851,5 +761,5 @@ class BaseModel{
 		}
 		return $re;
 	}
-
+	
 }

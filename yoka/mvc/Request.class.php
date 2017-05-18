@@ -18,6 +18,10 @@ class Request {
 	
 	private function __construct() {}
 	
+	/**
+	 * 单例
+	 * @return \yoka\mvc\Request
+	 */
 	public static function getInstance() {
 		if (!self::$_instance)
 			self::$_instance = new self();
@@ -31,6 +35,8 @@ class Request {
 	}
 
 	public function post($index, $default='') {
+		if($index == '' || $default == '')
+			return $_POST;
 		return isset($_POST[$index])? $_POST[$index]:$default;
 	}
 	

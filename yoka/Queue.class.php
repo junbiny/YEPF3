@@ -81,7 +81,7 @@ class Queue
      * @name getInstance
      * @desc 单件模式
      * @param string $item
-     * @return object instance of Cache
+     * @return \yoka\Queue
      * @access public
      **/
     public static function getInstance($item = 'default', $is_ssdb = null)
@@ -139,6 +139,28 @@ class Queue
         else $re = $this->object->rPush($key, json_encode($queue_data, JSON_UNESCAPED_UNICODE));
         Debug::cache($this->serverlist, $key, Debug::getTime() - $begin_microtime, 'addQueue', $re);
         return $re;
+    }
+    /**
+     * 获取集合列表 【注意】不含起始名字！
+     * @param string $start_name 起始名字（不含）
+     * @param string $end_name 结束名字（包含）
+     * @param number $limit 默认限制1000
+     */
+    public function getQueueNameList($start_name, $end_name, $limit = 1000){
+    	$begin_microtime = Debug::getTime();
+    	if($start_name == '' && $end_name == ''){
+    		//谨慎：获取全部
+    		$start = '';
+    		$end = '';
+    	}else{
+	    	$start = $this->_getkey($name_start);
+	    	$end = $this->_getkey($name_end);
+	    	if(empty($start) || empty($end)) return false;
+    	}
+	    $re = $this->object->hlist($start, $end, $limit);
+    	$re = $this->_unkey($re);
+    	Debug::cache($this->serverlist, $key, Debug::getTime() - $begin_microtime, 'sortQueueNameList', $re);
+    	return $re;
     }
     /**
      * 从队列取出数据
@@ -399,7 +421,7 @@ class Queue
     /**
      * @name _getkey
      * @desc 格式化所需key
-     * @param string $key
+     * @param mix $key  string | []
      * @return string $key
      * @access protected
      *
@@ -420,6 +442,32 @@ class Queue
     	}
     	return "";
     }
+    /**
+     * @name _unkey
+     * @desc 还原格式化前的key
+     * 【注意】 仅简单切除前缀长度，并未判断前缀是否一致！
+     * @param mix $key  string | []
+     * @return string $key
+     * @access protected
+     *
+     **/
+    protected function _unkey($key)
+    {
+    	if(!empty($this->prefix))
+    	{
+    		$len = strlen($this->prefix."_");
+    		if(is_array($key))
+    		{
+    			foreach($key as $k => $v)
+    			{
+    				$key[$k] = substr($v, $len);
+    			}
+    			return $key;
+    		}
+    		else return substr($v, $len);
+    	}
+    	return "";
+    }
     
     /**
 	 * @name __destruct
@@ -435,7 +483,10 @@ class Queue
     }
     
     /**
-     * 魔术方法
+     * 魔术方法(用于调用未封装的原生方法)
+     * 【注意】 
+     * 		！！！原生方法未对"set/key"等进行前缀加工，需要手工进行！！！
+     * 		基于上述原因，不建议使用原生方法
      */
     public function __call($method, $args)
     {

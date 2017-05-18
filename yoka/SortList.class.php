@@ -39,6 +39,16 @@ class SortList extends Queue
     	parent::__construct($item, $is_ssdb);
     }
     
+    /**
+     * 单例
+     * @param string $item
+     * @param unknown $is_ssdb
+     * @return \yoka\SortList
+     */
+    public static function getInstance($item = 'default', $is_ssdb = null){
+    	return parent::getInstance($item, $is_ssdb);
+    }
+    
     /*-------------------------------------- 有序列表操作(zSet)---------------------------------------------*/
     /**
      * 清空列表
@@ -58,12 +68,40 @@ class SortList extends Queue
     	return $re;
     }
     
+    /**
+     * 获取集合内全部元素
+     * （数据量大时请谨慎，建议先获取元素数量再分批操作）
+     * @param unknown $set
+     */
     public function sortGetsAll($set){
     	$begin_microtime = Debug::getTime();
     	$key = $this->_getkey($set);
     	if(empty($key)) return false;
     	$re = $this->object->zRange($key,0,-1,true);
     	Debug::cache($this->serverlist, $key, Debug::getTime() - $begin_microtime, 'sortGetsAll', $re);
+    	return $re;
+    }
+    
+    /**
+     * 按名称获取集合列表 【注意】不含起始名字！
+     * @param unknown $name_start
+     * @param unknown $name_end
+     * @param number $limit 默认限定1000条
+     */
+    public function sortGetSetNameList($name_start='', $name_end='', $limit = 1000){
+    	$begin_microtime = Debug::getTime();
+    	if($start_name == '' && $end_name == ''){
+    		//谨慎：获取全部
+    		$start = '';
+    		$end = '';
+    	}else{
+	    	$start = $this->_getkey($name_start);
+	    	$end = $this->_getkey($name_end);
+	    	if(empty($start) || empty($end)) return false;
+    	}
+	    $re = $this->object->zlist($start, $end, $limit);
+    	$re = $this->_unkey($re);
+    	Debug::cache($this->serverlist, $key, Debug::getTime() - $begin_microtime, 'sortGetSetNameList', $re);
     	return $re;
     }
     
@@ -90,9 +128,11 @@ class SortList extends Queue
     }
     /**
      * 添加一个键值到zSet
+     * 如果原有值已存在，则覆盖
      * @param string $set 集合名称
      * @param string $name 键
      * @param number $value 值
+     * @return int  0:覆盖，1:新增
      */
     public function sortAdd($set, $name, $value){
         if(!$set){
@@ -157,9 +197,11 @@ class SortList extends Queue
     }
     /**
      * 增加一个键的值
+     * (如果$name不存在，则会自动创建，值为$inc)
      * @param string $set 集合名称
      * @param string $name 键
      * @param number $inc 增加量
+     * @return int 增长后的值
      */
     public function sortInc($set, $name, $inc=1){
         if(!$set){

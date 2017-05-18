@@ -10,7 +10,7 @@ namespace yoka;
 
 class Cookie{
 		private static $expire = 8640000; 	//默认cookie时间：100天
-		private static $domain = 'iyishengyuan.com';
+		private static $domain = '';
 		private static $cookiepath = '/';
 		private static $cookiepre = 'YEPFV3';
 
@@ -25,12 +25,20 @@ class Cookie{
 		 * 【注意】不建议反复修改。改回默认时前缀与默认值会不同！
 		 * @param unknown $config
 		 */
-		public static function setDomain($domain){
+		public static function setDomain($domain, $cookiepre = ''){
 			self::$domain = $domain;
-			self::$cookiepre = 'Y'.substr(md5($domain),0,3);
+			if($cookiepre) self::$cookiepre = $cookiepre;
+			else self::$cookiepre = 'Y'.substr(md5($domain),0,3);
+			return self::$cookiepre;
+		}
+		public static function getDomain(){
+			return array('domain'=>self::$domain, 'cookiepre'=>self::$cookiepre);
 		}
 		public static function rawset($name, $val, $expire = '', $cookiepath = '', $domain = '')
 		{
+			//缺省默认域名
+			if(self::$domain == '') self::setDomain($_SERVER['HTTP_HOST']);
+			
 			if($expire !== 0){
 				if($expire == '') $expire = time() + self::$expire;
 				else $expire = time() + intval($expire);
@@ -44,6 +52,9 @@ class Cookie{
 		}
 		public static function set($name, $val, $expire = '', $cookiepath = '', $domain = '')
 		{
+			//缺省默认域名
+			if(self::$domain == '') self::setDomain($_SERVER['HTTP_HOST']);
+			
 			if($expire !== 0){
 				if($expire == '') $expire = time() + self::$expire;
 				else $expire = time() + intval($expire);
