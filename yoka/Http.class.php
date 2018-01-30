@@ -6,6 +6,11 @@ namespace yoka;
  * 支持两种模式： curl / socket
  * 【注意】 两种模式的配置参数及功能参数不一致！
  * 
+ * 使用代理两种方式：
+ * 	1， \yoka\Http::curlGet('http://www.baidu.com', 3000, null, null, ['host'=>'docker01','port'=>11080,'user'=>'yisheng','pass'=>'yisheng@2015','type'=>CURLPROXY_SOCKS5]);
+ * 	2， \yoka\Http::addProxy('docker01','docker01',11080,'yisheng','yisheng@2015');
+		\yoka\Http::curlGet('http://www.baidu.com', 3000, null, null, 'docker01');
+ * 
  * @author jimmy.dong@gmail.com
  */
 class Http{
@@ -73,9 +78,12 @@ class Http{
 	 * @param array $proxy_list
 	 * 格式：
 	 	array(
-			'docker01'=>array('host'=>'docker01','port'=>11080,'user'=>'yisheng','pass'=>'yisheng@2015','type'=>CURLPROXY_SOCKS5),
-			'docker02'=>array('host'=>'docker02','port'=>11080,'user'=>'yisheng','pass'=>'yisheng@2015','type'=>CURLPROXY_SOCKS5),
-			'docker03'=>array('host'=>'docker03','port'=>11080,'user'=>'yisheng','pass'=>'yisheng@2015','type'=>CURLPROXY_SOCKS5),
+			'web01'		=>array('host'=>'web01','port'=>11080,'user'=>'yisheng','pass'=>'yisheng@2015','type'=>CURLPROXY_SOCKS5),
+			'db01'		=>array('host'=>'db01','port'=>11080,'user'=>'yisheng','pass'=>'yisheng@2015','type'=>CURLPROXY_SOCKS5),
+			'db02'		=>array('host'=>'db02','port'=>11080,'user'=>'yisheng','pass'=>'yisheng@2015','type'=>CURLPROXY_SOCKS5),
+			'docker01'	=>array('host'=>'docker01','port'=>11080,'user'=>'yisheng','pass'=>'yisheng@2015','type'=>CURLPROXY_SOCKS5),
+			'docker02'	=>array('host'=>'docker02','port'=>11080,'user'=>'yisheng','pass'=>'yisheng@2015','type'=>CURLPROXY_SOCKS5),
+			'docker03'	=>array('host'=>'docker03','port'=>11080,'user'=>'yisheng','pass'=>'yisheng@2015','type'=>CURLPROXY_SOCKS5),
 		);
 	 */
 	public static function setProxy($proxy_list){
@@ -84,18 +92,20 @@ class Http{
 
 	/**
 	 * 增加一个代理
-	 * @param unknown $host IP
+	 * @param string $name	代理名称
+	 * @param string $host IP
 	 * @param number $port	端口	
 	 * @param string $user	认证：用户名
 	 * @param string $pass	认证：密码
-	 * @param unknown $name	代理名称
+	 * @param int $type 默认：CURLPROXY_SOCKS5
 	 */
-	public static function addProxy($host, $port=1080, $user='', $pass='', $name=''){
+	public static function addProxy($name, $host, $port=1080, $user='', $pass='', $type = CURLPROXY_SOCKS5){
 		$proxy = array(
 				'host' => $host,
 				'port' => $port,
 				'user' => $user,
-				'pass' => $pass
+				'pass' => $pass,
+				'type' => $type,
 		);
 		if($name)self::$socks_proxy[$name] = $proxy;
 		else self::$socks_proxy[] = $proxy;
@@ -207,7 +217,8 @@ class Http{
 		curl_setopt($ch, CURLOPT_NOSIGNAL,true);
 		curl_setopt($ch, CURLOPT_TIMEOUT_MS, $timeout_microsecond);
 		curl_setopt($ch, CURLOPT_CONNECTTIMEOUT_MS, $timeout_microsecond);
-		curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+		//curl_setopt($ch, CURLOPT_AUTOREFERER, TRUE);
+		curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true); 	//注意：这里不同于 WithHeader
 		if(self::$basic_auth) curl_setopt($ch, CURLOPT_USERPWD, self::$basic_auth['user'] . ":" . self::$basic_auth['pass']);
 		if (stripos($url, 'https://') === 0) {
 			curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);
@@ -279,7 +290,7 @@ class Http{
 		curl_setopt($ch, CURLOPT_NOBODY, false);
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 		//curl_setopt($ch, CURLOPT_AUTOREFERER, TRUE);
-		curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
+		//curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
 		if(self::$basic_auth) curl_setopt($ch, CURLOPT_USERPWD, self::$basic_auth['user'] . ":" . self::$basic_auth['pass']);
 		if (stripos($url, 'https://') === 0) {
 			curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);
@@ -337,7 +348,85 @@ class Http{
 			return array('header'=>$header, 'body'=>$body);
 		}
 	}
+	
+	/**
+	 * 上传文件
+	 * @param unknown $url
+	 * @param array $file 数组或字符串
+	 * eg: [ 'file1'=>'/tmp/test1.jpg', 'file2'='/tmp/test2.jpg']
+	 * @param array $data
+	 * @param number $timeout_microsecond
+	 * @param unknown $header
+	 * @param unknown $cookie
+	 * @param unknown $proxy
+	 */
+	public static function curlPostFile($url, $file, $data=array(), $timeout_microsecond = 3000, $header = null, $cookie = null, $proxy = null){
+		if(is_array($file)){
+			foreach($file as $k=>$v){
+				$data[$k] = new \CURLFile(realpath($v));
+			}
+		}else{
+			$data['upload'] = new \CURLFile(realpath($file));
+		}
+		\yoka\Debug::log('curlPostFile', $url);
+		\yoka\Debug::log('curlPost:file', $file);
+		$ch = curl_init(trim($url));
+		curl_setopt($ch, CURLOPT_POST, 1);
+		curl_setopt($ch, CURLOPT_RETURNTRANSFER,true);
+		curl_setopt($ch, CURLOPT_NOSIGNAL,true);
+		curl_setopt($ch, CURLOPT_TIMEOUT_MS, $timeout_microsecond);
+		curl_setopt($ch, CURLOPT_CONNECTTIMEOUT_MS, $timeout_microsecond);
+		if(self::$basic_auth) curl_setopt($ch, CURLOPT_USERPWD, self::$basic_auth['user'] . ":" . self::$basic_auth['pass']);
+		if (stripos($url, 'https://') === 0) {
+			curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);
+			curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, FALSE);
+		}
 
+		if($header){
+			$h = array();
+			foreach($header as $k=>$v){
+				$h[]= urlencode($k) .":" . urlencode($v);
+			}
+			curl_setopt($ch, CURLOPT_HTTPHEADER, $h);
+		}
+		if($cookie){
+			$c = array();
+			foreach($cookie as $k=>$v){
+				if(self::$cookie_urlencode)$c[]= urlencode($k) . "=" . urlencode($v);
+				else $c[]= $k . "=" . $v;
+			}
+			curl_setopt($ch, CURLOPT_COOKIE, implode(';', $c));
+		}
+		//proxy
+		if($proxy){
+			if(is_array($proxy) && $proxy['host'] && $proxy['port']){
+				$p = $proxy;
+			}elseif(self::$socks_proxy[$proxy]){
+				//指定代理
+				$p = self::$socks_proxy[$proxy];
+			}else{
+				//随机代理
+				$p = self::$socks_proxy[array_rand(self::$socks_proxy)];
+
+			}
+			curl_setopt($ch, CURLOPT_PROXY, $p['host'] .':'. $p['port']);
+			if($p['type'])curl_setopt($ch, CURLOPT_PROXYTYPE, $p['type']);
+			if($p['user'])curl_setopt($ch, CURLOPT_PROXYUSERPWD, $p['user'] .':'. $p['pass']);
+		}
+
+		curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+		$ret = curl_exec($ch);
+		$curl_errno = curl_errno($ch);
+		$curl_error = curl_error($ch);
+		curl_close($ch);
+		if($curl_errno >0){
+			\yoka\Debug::log('Http::curlPostFile Error',$curl_error);
+			return false;
+		}else{
+			return $ret;
+		}
+	}
+	
 	/**
 	 * 毫秒级超时 Curl Post
 	 * @param string $url
@@ -350,10 +439,12 @@ class Http{
 	 */
 	public static function curlPost($url, $data=array(), $timeout_microsecond = 3000, $header = null, $cookie = null, $proxy = null){
 		\yoka\Debug::log('curlPost', $url);
-		\yoka\Debug::log('curlPost:param', http_build_query($data));
+		\yoka\Debug::log('curlPost:param', is_string($data)?$data:http_build_query($data));
 		$ch = curl_init(trim($url));
 		curl_setopt($ch, CURLOPT_POST, 1);
-		curl_setopt($ch, CURLOPT_RETURNTRANSFER,true);
+		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+		//curl_setopt($ch, CURLOPT_AUTOREFERER, TRUE);
+		curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true); 	//注意：这里不同于 WithHeader
 		curl_setopt($ch, CURLOPT_NOSIGNAL,true);
 		curl_setopt($ch, CURLOPT_TIMEOUT_MS, $timeout_microsecond);
 		curl_setopt($ch, CURLOPT_CONNECTTIMEOUT_MS, $timeout_microsecond);
@@ -401,7 +492,6 @@ class Http{
 
 		curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
 		$data = curl_exec($ch);
-		file_put_contents('/tmp/curl.log', 'curl_result:'. $data . "\n", FILE_APPEND);
 		$curl_errno = curl_errno($ch);
 		$curl_error = curl_error($ch);
 		curl_close($ch);
@@ -431,7 +521,7 @@ class Http{
 		curl_setopt($ch, CURLOPT_HEADER, true);
 		curl_setopt($ch, CURLOPT_NOBODY, false);
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-		curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
+		//curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
 		if(self::$basic_auth) curl_setopt($ch, CURLOPT_USERPWD, self::$basic_auth['user'] . ":" . self::$basic_auth['pass']);
 		if (stripos($url, 'https://') === 0) {
 			curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);

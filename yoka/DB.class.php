@@ -176,6 +176,11 @@ class DB
 		try 
 		{
 			$affectedRows = $this->db->exec($sql);
+			if($affectedRows === false && $this->db->errorInfo()[1] == 2013){
+				//超时连接丢失，重新连接尝试
+				$this->reconnect();
+				$affectedRows = $this->db->exec($sql);
+			}
 		}
 		catch (Exception $e)
 		{
@@ -268,6 +273,10 @@ class DB
 	{
 		if(is_array($where)) $where = self::_buildQuery($where, $trim, $strict, $connector, $addslashes);
 		$sql = "UPDATE `".$table_name."` SET " ;
+		if(! is_array($info)){
+			\yoka\Debug::log('DB Error','info is not array');
+			return false;
+		}
 		foreach ($info as $k => $v)
 		{
 			$k = trim($k);
@@ -302,7 +311,19 @@ class DB
 		$begin_microtime = Debug::getTime();
 		try 
 		{
-			if($this->pdo)$this->statement = $this->db->query($sql);
+			if($this->pdo){
+				if(!$this->statement = $this->db->query($sql)){
+					if($this->db->errorInfo()[1] == 2013){
+						//超时连接丢失，重新连接尝试
+						$this->reconnect();
+						$this->statement = $this->db->query($sql);
+					}
+				}
+				if(! $this->statement){
+					$this->err($sql);
+					return false;
+				}
+			}
 			else $status = $this->db->query($sql);
 		}
 		catch (Exception $e)
@@ -315,7 +336,10 @@ class DB
 			if($return_statement) $re = $this->statement;
 			else{
 				if($this->statement && $this->statement->errorCode() === '00000')$re = true;
-				else $re = false;
+				else {
+					\yoka\Debug::log('DB query errorCode', $this->statement->errorCode());
+					$re = false;
+				}
 				//不需要保持statement，释放
 				if($this->statement)$this->statement->closeCursor();
 			}
@@ -334,8 +358,12 @@ class DB
 		$begin_microtime = Debug::getTime();
 		try 
 		{
-			if($this->pdo)$info = $this->statement->fetch(PDO::FETCH_ASSOC);
-			else $info = $this->db->fetch($query);
+			if($this->pdo){
+				$info = $this->statement->fetch(PDO::FETCH_ASSOC);
+				if($info === false && $this->db->errorInfo()[1] == 2013){
+					throw new Exception('Mysql goneaway : timeout');
+				}
+			}else $info = $this->db->fetch($query);
 		}
 		catch (Exception $e)
 		{
@@ -367,6 +395,13 @@ class DB
 		{
 			if($this->pdo){
 				if(!$this->statement = $this->db->query($sql)){
+					if($this->db->errorInfo()[1] == 2013){
+						//超时连接丢失，重新连接尝试
+						$this->reconnect();
+						$this->statement = $this->db->query($sql);
+					}
+				}
+				if(!$this->statement){
 					$this->err($sql);
 					return false;
 				}
@@ -441,6 +476,13 @@ class DB
 		{
 			if($this->pdo){
 				if(! $this->statement = $this->db->query($sql)){
+					if($this->db->errorInfo()[1] == 2013){
+						//超时连接丢失，重新连接尝试
+						$this->reconnect();
+						$this->statement = $this->db->query($sql);
+					}
+				}
+				if(! $this->statement){
 					$this->err($sql);
 					return false;
 				}
@@ -532,9 +574,10 @@ class DB
 	 */
 	public function logError($sql, $result = ''){
 		if(self::$log_error){
-			$t = debug_backtrace(1);
+			$t = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
 			if($t[4]){
 				$caller = $t[1]['file'].' , line:'.$t[1]['line'];
+				$caller .= ' <- ' . $t[2]['file'].' , line:'.$t[2]['line'];
 				$caller .= ' <- ' . $t[3]['file'].' , line:'.$t[3]['line'];
 				$caller .= ' <- ' . $t[4]['file'].' , line:'.$t[4]['line'];
 			}else{
@@ -636,7 +679,7 @@ class DB
 			Debug::log('Error DB: too many args', $args);
 			break;
 		}
-		if(self::$debug)Debug::db($this->db_host, $this->db_name, $args, Debug::getTime() - $begin_microtime, $returnValue);
+		if(self::$debug)Debug::db($this->db_host, $this->db_name, $method . ':' . json_encode($args), Debug::getTime() - $begin_microtime, $returnValue);
 		return $returnValue;
 		  
 		Debug::log("undefined function: $name", $arguments);
@@ -727,6 +770,13 @@ class DB
 			$sql = str_replace('%_creteria_%', $where, $sql);
 		}
 		if(! $this->statement = $this->db->query($sql)){
+			if($this->db->errorInfo()[1] == 2013){
+				//超时连接丢失，重新连接尝试
+				$this->reconnect();
+				$this->statement = $this->db->query($sql);
+			}
+		}
+		if(! $this->statement){
 			$this->err($sql);
 			return false;
 		}

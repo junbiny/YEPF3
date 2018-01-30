@@ -27,10 +27,11 @@ class Queue
 	 * 实例化数组
 	 */
 	static $instance = array();
+	static $is_ssdb_default = true;	//默认SSDB
+	static $default = 'default';		//默认库
 	/**
 	 * 是否SSDB
 	 */
-	static $is_ssdb_default = true;
 	protected $is_ssdb;
 	/**
 	 * 服务器列表
@@ -54,9 +55,14 @@ class Queue
 	 * @access protected
 	 *
 	 */
-    protected function __construct($item = 'default', $is_ssdb = null)
+    protected function __construct($item = null, $is_ssdb = null)
     {
     	global $CACHE;
+    	
+    	if($item == null){
+    		$item = self::$default;	//使用默认
+    	}
+    	
    		$this->prefix = $item;
    		if(isset($CACHE['queue'][$item])){
 			$config = $CACHE['queue'][$item];
@@ -83,8 +89,12 @@ class Queue
      * @param string $item
      * @return self
      **/
-    public static function getInstance($item = 'default', $is_ssdb = null)
+    public static function getInstance($item = null, $is_ssdb = null)
     {
+    	if($item == null){
+    		$item = self::$default;	//使用默认
+    	}
+    	
     	$class = get_called_class();
     	if($class::$instance[$item]) {
     		return self::$instance[$item.'#'.$is_ssdb];
@@ -95,6 +105,14 @@ class Queue
     	}
     }
 
+    /**
+     * 设置默认
+     */
+    static public function setDefault($default = 'default'){
+    	self::$default = $default;
+    	return true;
+    }
+    
 	/**
 	 * SSDB 开启或关闭，默认关闭
 	 * @param $flag
@@ -172,7 +190,11 @@ class Queue
     	if(empty($key)) return false;
     	if($this->is_ssdb)$re = $this->object->qpop_front($key);
     	else $re = $this->object->lPop($key);
-    	$re = json_decode($re, true);
+    	if($t = json_decode($re, true)){
+    		$re = $t;
+    	}else{
+    		if($re) Debug::log('queue:'.$queue_name, '警告: Queue内容不是Json格式，按string兼容输出');
+    	}
     	Debug::cache($this->serverlist, $key, Debug::getTime() - $begin_microtime, 'getQueue', $re);
     	return $re;
     }
@@ -204,7 +226,12 @@ class Queue
     	if($this->is_ssdb) $re = $this->object->qslice($key, $start, -1);
     	else $re = $this->object->lRange($key, $start, -1);
     	foreach($re as $k=>$v){
-    		$re[$k] = json_decode($v, true); 
+    		if($t = json_decode($v, true)){
+    			$re[$k] = $t;
+    		}else{
+    			if($v) Debug::log('queue:'.$queue_name, '警告: Queue内容不是Json格式，按string兼容输出');
+    			$re[$k] = $v;
+    		}
     	}
     	$re = array_reverse($re);
     	Debug::cache($this->serverlist, $key, Debug::getTime() - $begin_microtime, 'getsQueueNew', $re);
@@ -220,7 +247,12 @@ class Queue
     	if($this->is_ssdb) $re = $this->object->qslice($key, 0, $n-1);
     	else $re = $this->object->lRange($key, 0, $n-1);
     	foreach($re as $k=>$v){
-    		$re[$k] = json_decode($v, true); 
+    	    if($t = json_decode($v, true)){
+    			$re[$k] = $t;
+    		}else{
+    			if($v) Debug::log('queue:'.$queue_name, '警告: Queue内容不是Json格式，按string兼容输出');
+    			$re[$k] = $v;
+    		}
     	}
     	Debug::cache($this->serverlist, $key, Debug::getTime() - $begin_microtime, 'getsQueueOld', $re);
     	return $re;
@@ -235,7 +267,12 @@ class Queue
     	if($this->is_ssdb) $re = $this->object->qslice($key, 0, -1);
     	else $re = $this->object->lRange($key, 0, -1);
     	foreach($re as $k=>$v){
-    		$re[$k] = json_decode($v, true);
+    	    if($t = json_decode($v, true)){
+    			$re[$k] = $t;
+    		}else{
+    			if($v) Debug::log('queue:'.$queue_name, '警告: Queue内容不是Json格式，按string兼容输出');
+    			$re[$k] = $v;
+    		}
     	}
     	Debug::cache($this->serverlist, $key, Debug::getTime() - $begin_microtime, 'getsQueueAll', $re);
     	return $re;

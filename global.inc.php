@@ -17,6 +17,7 @@
  *  DB类升级为PDO，部分函数（update,delete）需通过参数指定兼容
  *  memcache类升级，保持兼容
  *  Debug类升级，增加stop, start, log_db
+ *  Debug判断是否有FirePHP标志
  *  
  *  原有项目向YEPF3迁移建议：
 	1，确认PHP版本高于5.3
@@ -25,6 +26,7 @@
 		页面上部对应添加： use yoka\Debug等，代码中去除\。
 	4，修改_LOCAL/local.inc.php中YEPF定义路径为_YEPF3.0
 	5，调试运行，针对出现问题参照demo/init.php, demo/_LOCAL/local.inc.php进行修改
+	
  **/
 if(PHP_VERSION < '5.3.0')
 {
@@ -107,20 +109,26 @@ class YEPFCore {
 }
 YEPFCore::registerAutoload();
 
-//判断是否开启Debug
-if((defined('YEPF_IS_DEBUG') && YEPF_IS_DEBUG) || (isset($_REQUEST['debug']) && strpos($_REQUEST['debug'], YEPF_DEBUG_PASS) !== false))
-{
+//判断是否开启error_report
+if((defined('YEPF_IS_DEBUG') && YEPF_IS_DEBUG) || (isset($_REQUEST['debug']) && strpos($_REQUEST['debug'], YEPF_DEBUG_PASS) !== false)){
 	//Debug模式将错误打开
 	ini_set('display_errors', true);
 	//设置错误级别
 	error_reporting(YEPF_ERROR_LEVEL);
+
 	//开启ob函数
 	ob_start();
-	//Debug开关打开
+	//Debug开关
 	\yoka\Debug::start();
 	//注册shutdown函数用来Debug显示 : 手工处理显示的场景，请设置： define('MANUAL_DEBUG_SHOW',true);
 	if(!defined('MANUAL_DEBUG_SHOW') || MANUAL_DEBUG_SHOW != true) register_shutdown_function(array('\yoka\Debug', 'show'));
+
+}else{
+	//关闭错误显示
+	ini_set('display_errors', false);
 }
+
+
 //读取系统配置文件
 if(!defined('ENV_PATH'))define('ENV_PATH','/WORK/CONF');
 if(file_exists(ENV_PATH . DIRECTORY_SEPARATOR . 'WORK-ENV.ini')){

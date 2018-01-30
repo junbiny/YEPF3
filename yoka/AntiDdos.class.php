@@ -3,7 +3,12 @@ namespace yoka;
 /**
  * 反Ddos攻击
  * 
- * 使用示例参见 filter 方法。
+ * 使用：
+ 
+    	60秒内超过内20次，封禁7200秒钟
+	   	$cache = \yoka\Cache::getInstance('aibangmang');
+    	$re = \yoka\AntiDdos::filter($cache, 'sendSms', \tools\Util::getIp(), 60, 20, 7200);
+ *
  */
 class AntiDdos{
 	public static $whiteList=['10.','192.','121.69.30.230','1.202'];
@@ -17,20 +22,18 @@ class AntiDdos{
 	 * @param int $limit			每个间隔中允许的次数
 	 * @param int $recover			屏蔽后恢复时间（秒）
 	 * 
-	 * 使用： 
-	   	$cache = \yoka\Cache::getInstance('aibangmang');
-    	$re = \yoka\AntiDdos::filter($cache, 'sendSms', 'test001', 60, 20, 7200);
-    	60秒内超过内20次，则封禁7200秒钟
+
 	 */
 	public static function filter($cache, $project, $key='', $second=60, $limit=20, $recover=7200){
 		if(! is_callable(array($cache,'get'))){
 			//传入实例不可用。全部返回正确
 			return true;
 		}
+		//if(!$key) return false;  					//未指定key
+		if(! is_string($key)) $key = json_encode($key);
 		foreach(self::$whiteList as $w){
 			if(strpos($key, $w) === 0) return true; //命中白名单
 		}
-		if(! is_string($key)) $key = json_encode($key);
 		$keyMd5 = md5($key);
 		//检查是否已经封禁
 		$keySeal = 'AntiDdos_Seal_'.$project.'_'.$keyMd5;

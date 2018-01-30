@@ -741,7 +741,7 @@ class FirePHP {
     public function fb($Object)
     {
     	if(\yoka\Debug::$open == false){
-    		throw $Object;
+    		//throw $Object;		//by jimmy.dong@gmail.com 不抛出 Exception [注意：吞没了异常]
     		return;
     	}
         if($this instanceof FirePHP_Insight && method_exists($this, '_logUpgradeClientMessage')) {
@@ -897,7 +897,7 @@ class FirePHP {
         } else
         if ($Type==self::TRACE) {
           
-            $trace = debug_backtrace();
+            $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
             if (!$trace) return false;
             for( $i=0 ; $i<sizeof($trace) ; $i++ ) {
     
@@ -962,7 +962,7 @@ class FirePHP {
         if ($this->options['includeLineNumbers']) {
             if (!isset($meta['file']) || !isset($meta['line'])) {
     
-                $trace = debug_backtrace();
+                $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
                 for( $i=0 ; $trace && $i<sizeof($trace) ; $i++ ) {
           
                     if (isset($trace[$i]['class'])

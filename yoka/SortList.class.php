@@ -90,7 +90,7 @@ class SortList extends Queue
      */
     public function sortGetSetNameList($name_start='', $name_end='', $limit = 1000){
     	$begin_microtime = Debug::getTime();
-    	if($start_name == '' && $end_name == ''){
+    	if($name_start == '' && $name_end == ''){
     		//谨慎：获取全部
     		$start = '';
     		$end = '';
@@ -101,7 +101,7 @@ class SortList extends Queue
     	}
 	    $re = $this->object->zlist($start, $end, $limit);
     	$re = $this->_unkey($re);
-    	Debug::cache($this->serverlist, $key, Debug::getTime() - $begin_microtime, 'sortGetSetNameList', $re);
+    	Debug::cache($this->serverlist, $start.' : '.$end, Debug::getTime() - $begin_microtime, 'sortGetSetNameList', $re);
     	return $re;
     }
     
@@ -236,8 +236,8 @@ class SortList extends Queue
     /**
      * 取N个值
      * @param 集合 $set
-     * @param integer $start 开始位置(坐标从0开始)
      * @param integer $limit 数量
+     * @param integer $start 开始位置(坐标从0开始)
      */
     public function sortGet($set, $limit, $start=0, $withScores=true){
         if(!$set){

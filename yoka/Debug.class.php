@@ -2,8 +2,7 @@
 /**
  * @name Debug.class.php
  * @desc YEPF调试类,基于FirePHP
- * @author 曹晓冬
- * @update by jimmy.dong@gmail.com
+ * @by jimmy.dong@gmail.com
  * @createtime 2009-01-15 11:18
  * @updatetime 2009-03-30 15:26
  * @usage
@@ -14,6 +13,25 @@
  *	register_shutdown_function(array('Debug', 'show'));
  * @update by jimmy.dong@gmail.com
  *  增加db记录开关，用于记录数据库修改操作
+ * 
+ * 通过global.inc.php加载。或手工加载：
+
+	//打开 FireBug 支持 （注意：仅FirePHP标志存在的情况下）
+	if(\yoka\Debug::_firephp()){
+		//开启ob函数
+		ob_start();
+		//Debug开关
+		\yoka\Debug::start();
+		//注册shutdown函数用来Debug显示 : 手工处理显示的场景，请设置： define('MANUAL_DEBUG_SHOW',true);
+		if(!defined('MANUAL_DEBUG_SHOW') || MANUAL_DEBUG_SHOW != true) register_shutdown_function(array('\yoka\Debug', 'show'));
+	}
+
+ * @update by jimmy.dong@gmail.com
+ * 增加页面Debug支持，通过 ?debug=page 或  Debug::debug_page = true 开启
+ * 
+ * 已知BUG：
+ * 当多级数组 + 下级数组仅一个元素 + 元素的key为默认 + 元素的值为0或1 => Variable Viewer 会将 array('0'=>0) 错误显示为 0
+ * eg: \yoka\Debug::log('bug',['test'=>[0]])
  */
 namespace yoka;
 use FirePHP;
@@ -109,7 +127,6 @@ class Debug
 	
 	/**
 	 * @desc 缓存查询执行时间数组
-	 * @var array
 	 */
 	static $cache_table = array();
 	/**
@@ -126,14 +143,16 @@ class Debug
 	static $template_table = array();
 	/**
 	 * @desc 起始时间
-	 * @var int
 	 */
 	static $begin_time;
 	/**
 	 * @desc debug显示级别
-	 * @var string
 	 */
 	static $debug_level;
+	/**
+	 * 页面方式显示DebugBar
+	 */
+	static $debug_page = false;
 	/**
 	 * @name __construct
 	 * @desc 构造函数
@@ -268,6 +287,10 @@ class Debug
 		}elseif($caller == 'full'){
 			$caller = debug_backtrace(5);
 		}
+// 		if(is_string($results) && strlen($results)>120 && strpos(' ', substr($results,0,120))===false){
+// 			//超长且没有空格
+// 			$results = chunk_split($results, 120, ' ');
+// 		}
 		if($results === 'Temporary Value'){
            array_push(self::$log_table, array('[临时调试]', $label, $caller));
         }else{
@@ -335,7 +358,7 @@ class Debug
 		 	}catch(\Exception $e){
 		 		//do nothing
 		 		$filename = "debug_db_" . date("Ymd") . ".log";
-		 		Log::customLog($filename, "[Debug Error] write to mysql_log fail. " . $sql);
+		 		Log::customLog($filename, "[Debug Error] write to mysql_log fail. " . json_encode($values, JSON_UNESCAPED_UNICODE));
 		 	}
 		}
 	}
@@ -357,6 +380,11 @@ class Debug
 		{
 			return ;
 		}
+		if(is_string($ip) && strlen($ip)>24)$ip = substr($ip, 0, 24) . '..';
+// 		if(is_string($sql) && strlen($sql)>120 && strpos(' ', substr($sql,0,120))===false){
+// 			//超长且没有空格
+// 			$sql = chunk_split($sql, 120, ' ');
+// 		}
 		if(is_string($results) && strlen($results)>256)$results = substr($results,0,256) . '...(length:'.strlen($results).')';
 		array_push(self::$db_table, array($ip, $database, $times, $sql, $results));
 	}
@@ -466,8 +494,10 @@ class Debug
 	public static function _firephp(){
 		if(preg_match('/FirePHP/i',$_SERVER['HTTP_USER_AGENT'])){
 			return 'FirePHP';
+		}if(preg_match('/PageBar/i',$_SERVER['HTTP_USER_AGENT'])){
+			return 'PageBar';
 		}elseif($_SERVER['HTTP_X_YEPF'] != ''){
-			if(preg_match('Chrome/i', $_SERVER['HTTP_USER_AGENT']) || preg_match('/Chrome/i', $_SERVER['HTTP_X_YEPF'])){
+			if(preg_match('/Chrome/i', $_SERVER['HTTP_USER_AGENT']) || preg_match('/Chrome/i', $_SERVER['HTTP_X_YEPF'])){
 				return 'chrome';
 			}else{
 				return 'firefox';
@@ -496,6 +526,8 @@ class Debug
 			$instance = FirePHP::getInstance(true);
 			$args = func_get_args();
 			return call_user_func_array(array($instance,'fb'),$args);
+		}elseif(self::$firephp == 'PageBar'){
+			//nothing
 		}else{
 			//FireDebug停止维护，启用ChromeLogger模式
 			$title = $array[0];
@@ -537,10 +569,65 @@ class Debug
 	{
 		global $YOKA, $TEMPLATE, $CFG;
 
+		/*-----------【Debug::$open无关】 记录数据库改变情况到日志文件 ----------*/
+		if(self::$db_log){
+			$string = '';
+			if(!empty(self::$db_table))
+			{
+				foreach (self::$db_table as $v)
+				{
+					if(preg_match('/insert|update|delete/i',$v[3])) $string .= "|----  ".$v[1]."  ".$v[2]."  ".$v[3]."  ".$v[4]."  ----|\n";
+				}
+				if($string){
+					$string = 	"Request: " . $_SERVER['REQUEST_URI'] . "\n" . $string;
+					$filename = "debug_db_" . date("Ymd") . ".log";
+					Log::customLog($filename, $string);
+				}
+			}
+		}
+				
+		/*------------------【Debug::$open关闭则不执行】 -----------------------*/
 		if(self::$open === false)return;
 		else self::$open == false; //防止再次输出
 		
-		try{
+		//页面调试开启方法： 1，设置$debug_page； 2，传入参数(仅限测试)； 3，通过插件修改头信息(Ajax除外)
+		if(self::$debug_page || ($_REQUEST['debug'] == 'page' && defined('IS_TEST') && IS_TEST) || ($_SERVER['HTTP_X_YEPF'] == 'PageBar') && !preg_match('/json|javascript/i', $_SERVER['HTTP_ACCEPT'])){
+			//页面方式调试
+			if(class_exists('\DebugBar\DebugBar')){
+				$debugbar = new \yoka\DebugBar();
+				$debugbarRenderer = $debugbar->getJavascriptRenderer("/Resources");
+				for($i=1;$i<count(self::$log_table);$i++){
+					$t = self::$log_table[$i];
+					$debugbar->getCollector('Costom Log')->add($t[0], $t[1], $t[2]);
+				}
+				for($i=0;$i<count(self::$db_table);$i++){
+					$t = self::$db_table[$i];
+					$debugbar->getCollector('DB Log')->add($t[0].' ['.$t[1].']', $t[4], $t[3].', time:'.$t[2]);
+				}
+				for($i=0;$i<count(self::$cache_table);$i++){
+					$t = self::$cache_table[$i];
+					$debugbar->getCollector('Cache Log')->add($t[0].' ['.$t[3].'] ', $t[4], 'key:'.$t[1].', time:'.$t[2]);
+				}
+				for($i=1;$i<count(self::$time_table);$i++){
+					$t = self::$time_table[$i];
+					$debugbar->getCollector('time')->add($t[0], $t[1], $t[2]);
+				}
+				echo '
+					<link rel="stylesheet" type="text/css" href="//cdn.yirenjiankang.org/Resources/vendor/font-awesome/css/font-awesome.min.css">
+					<link rel="stylesheet" type="text/css" href="//cdn.yirenjiankang.org/Resources/vendor/highlightjs/styles/github.css">
+					<link rel="stylesheet" type="text/css" href="//cdn.yirenjiankang.org/Resources/debugbar.css">
+					<link rel="stylesheet" type="text/css" href="//cdn.yirenjiankang.org/Resources/widgets.css">
+					<link rel="stylesheet" type="text/css" href="//cdn.yirenjiankang.org/Resources/openhandler.css">
+					<script type="text/javascript" src="//cdn.yirenjiankang.org/Resources/vendor/jquery/dist/jquery.min.js"></script>
+					<script type="text/javascript" src="//cdn.yirenjiankang.org/Resources/vendor/highlightjs/highlight.pack.js"></script>
+					<script type="text/javascript" src="//cdn.yirenjiankang.org/Resources/debugbar.js"></script>
+					<script type="text/javascript" src="//cdn.yirenjiankang.org/Resources/widgets.js"></script>
+					<script type="text/javascript" src="//cdn.yirenjiankang.org/Resources/openhandler.js"></script>
+					<script type="text/javascript">jQuery.noConflict(true);</script>
+				';
+				echo $debugbarRenderer->render();
+			}
+		}else try{
 			//页面执行时间
 			switch(self::$debug_level)
 			{
@@ -786,24 +873,6 @@ class Debug
 		}catch(\Exception $e){
 			//防止报错信息，暂无进一步处理
 		}
-		
-		/*---------记录数据库改变情况到日志文件-------------------------*/
-		if(self::$db_log){
-			$string = '';
-			if(!empty(self::$db_table))
-			{
-				foreach (self::$db_table as $v)
-				{
-					if(preg_match('/insert|update|delete/i',$v[3])) $string .= "|----  ".$v[1]."  ".$v[2]."  ".$v[3]."  ".$v[4]."  ----|\n";
-				}
-				if($string){
-					$string = 	"Request: " . $_SERVER['REQUEST_URI'] . "\n" . $string;
-					$filename = "debug_db_" . date("Ymd") . ".log";
-					Log::customLog($filename, $string);
-				}
-			}
-		}
-		
 
 		/*---------记录调试信息至日志文件中------------*/
 		if(self::$debug_log)
@@ -866,7 +935,7 @@ class Debug
 				}
 			}catch(\Exception $e){
 				$filename = "debug_db_" . date("Ymd") . ".log";
-				Log::customLog($filename, "[Debug Error] write to mysql_log fail. " . $sql);
+				Log::customLog($filename, "[Debug Error] write to mysql_log fail. " . json_encode($values, JSON_UNESCAPED_UNICODE));
 			}
 		}
 	}

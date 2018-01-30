@@ -39,7 +39,7 @@ class FileUpload{
 	static public $url_path_upload;
 	
 	/**
-	 * 允许传入的文件格式
+	 * 可识别的文件扩展名
 	 */
 	static public $file_ext_allowed = array(
 		'jpg'=>'/\.jpg$/i',
@@ -56,8 +56,52 @@ class FileUpload{
 		'log'=>'/\.log$/i',
 		'pdf'=>'/\.pdf$/i',
 		'docx'=>'/\.docx$/i',
-		'xls' => '/\.xls/i',
-		'xlsx' => '/\.xlsx/'
+		'doc'=>'/\.doc$/i',
+		'xlsx' => '/\.xlsx$/i',
+		'xls' => '/\.xls$/i',
+		'txt'=> '/\.txt$/i',
+	);
+	/**
+	 * 头信息
+	 */
+	static public $file_ext_header = array(
+			'/\.avi/i'=>'video/x-msvideo',
+			'/\.biz/i'=>'text/xml',
+			'/\.bmp/i'=>'image/bmp',
+			'/\.css/i'=>'text/css',
+			'/\.doc/i'=>'application/msword',
+			'/\.gif/i'=>'image/gif',
+			'/\.htm/i'=>'text/html',
+			'/\.html/i'=>'text/html',
+			'/\.log/i'=>'text/html',
+			'/\.ico/i'=>'image/x-icon',
+			'/\.jpeg/i'=>'image/jpeg',
+			'/\.jpg/i'=>'image/jpeg',
+			'/\.js/i'=>'application/x-javascript',
+			'/\.m3u/i'=>'audio/mpegurl',
+			'/\.mid/i'=>'audio/mid',
+			'/\.mov/i'=>'video/quicktime',
+			'/\.mp3/i'=>'audio/mp3',
+			'/\.mp4/i'=>'video/mpeg4',
+			'/\.mpa/i'=>'video/x-mpg',
+			'/\.mpeg/i'=>'video/mpg',
+			'/\.mpg/i'=>'video/mpg',
+			'/\.pdf/i'=>'application/pdf',
+			'/\.png/i'=>'image/png',
+			'/\.ppt/i'=>'application/x-ppt',
+			'/\.qt/i'=>'video/quicktime',
+			'/\.svg/i'=>'text/xml',
+			'/\.txt/i'=>'text/html',
+			'/\.text/i'=>'text/html',
+			'/\.tif/i'=>'image/tiff',
+			'/\.tiff/i'=>'image/tiff',
+			'/\.vml/i'=>'text/xml',
+			'/\.vsd/i'=>'application/x-vsd',
+			'/\.wmv/i'=>'video/x-ms-wmv',
+			'/\.xml/i'=>'text/xml',
+			'/\.xsl/i'=>'text/xml',
+			'/\.xslt/i'=>'text/xml',
+			'/\..*/i'=>'application/octet-stream',
 	);
 	
 	/**
@@ -66,6 +110,11 @@ class FileUpload{
 	 * @param string $url_path_upload  eg: http://xxx.xxx.com/storage
 	 */
 	public static function init($file_path_upload='', $url_path_upload=''){
+		//去除末尾/号
+		if(substr($file_path_upload, -1) == "/") $file_path_upload = substr($file_path_upload, 0, -1);
+		if(substr($url_path_upload, -1) == "/") $url_path_upload = substr($url_path_upload, 0, -1);
+		
+		//上传相对路径
 		if($file_path_upload && file_exists($file_path_upload)){
 			self::$file_path_upload = $file_path_upload;
 		}elseif(self::$file_path_upload){
@@ -81,6 +130,7 @@ class FileUpload{
 			return false;
 		}
 		
+		//上传URL地址
 		if($url_path_upload){
 			self::$url_path_upload = $url_path_upload;
 		}elseif(self::$url_path_upload){
@@ -103,11 +153,13 @@ class FileUpload{
 	 * 适用于
 	 * 1 form表单上传二进制图片；
 	 * 2 直接下载网络资源地址；
-	 * @param string $src_filename 原始文件名。 eg:$_FILES['logo']['name']
-	 * @param string $tmp_file_path_name 上传临时文件。eg: $_FILES['logo']['tmp_name']
 	 * 指定抓取网络文件时，仅需要$tmp_file_path_name为URL，参数$src_filename无意义
 	 * 如： create('', http://p3.yokacdn.com/pic/idx/2012/0406/U372P9T16D1F233DT20120329101051.jpg)
+	 *
+	 * @param string $src_filename 原始文件名。 eg:$_FILES['upload']['name']
+	 * @param string $tmp_file_path_name 上传临时文件。eg: $_FILES['upload']['tmp_name']
 	 * @return 保存后的文件相对路径
+	 *
 	 * 获取绝对路径，请使用 getRealPath($file_path_name)方法
 	 */
 	public static function create($src_filename, $tmp_file_path_name, $check_image = false){
@@ -130,14 +182,14 @@ class FileUpload{
 				break;
 			}
 		}
-		if($ext == ''){
-			throw(new \Exception('不被允许的文件扩展名'));
-			return false;
-		}
+// 		if($ext == ''){
+// 			throw(new \Exception('不被允许的文件扩展名'));
+// 			return false;
+// 		}
 		$base_filename = md5(basename($src_filename) . time() . rand(0,99));
 		$file_path_name = date('Ymd') . '/' . $base_filename . '.' . $ext;
 		if(!self::_mkdirs(self::$file_path_upload . '/' . $file_path_name)){
-			throw(new \Exception('创建子目录失败'));
+			throw(new \Exception('创建子目录失败:' . self::$file_path_upload . '/' . $file_path_name));
 		}
 		Debug::flog('flog:upload', self::$file_path_upload . '/' . $file_path_name);
 		self::mkdirs(ROOT_PATH . '/DocumentRoot/' . $fileUploadPath . '/' . $file_path_name);
@@ -205,11 +257,12 @@ class FileUpload{
 		self::init();
 		//URL处理，防止用户误传入URL（注意：可能导致类似/upload/upload/下文件处理异常）
 		$file_path_name = self::getPath($file_path_name);
-		
-		return self::$file_path_upload . '/' . $file_path_name;
+		if(substr($file_path_name, 0, 1) == '/') $re = self::$file_path_upload . $file_path_name;
+		$re = self::$file_path_upload . '/' . $file_path_name;
+		return $re;
 	}
 	/**
-	 * 由URL逆向计算文件地址（相对路径）
+	 * 由URL或绝对路径逆向计算文件地址（相对路径）
 	 * @param unknown_type $file_url_path
 	 */
 	public static function getPath($file_url_path)
@@ -226,11 +279,15 @@ class FileUpload{
 			$file_url_path = $t['path'];
 		}
 		//相对路径的URL
-		if(strpos('/storage/', $file_url_path) === 0){
+		if(strpos($file_url_path, '/storage/') === 0){
 			$file_url_path = substr($file_url_path, strlen('/storage/'));
 		}
-		if(strpos('/upload/', $file_url_path) === 0){
+		if(strpos($file_url_path, '/upload/') === 0){
 			$file_url_path = substr($file_url_path, strlen('/upload/'));
+		}
+		//绝对地址的路径
+		if(strpos($file_url_path, self::$file_path_upload) === 0){
+			$file_url_path = substr($file_url_path, strlen(self::$file_path_upload)+1);
 		}
 		return $file_url_path;
 	}
@@ -293,7 +350,7 @@ class FileUpload{
 	static function _mkdirs($pathStr,$mod=0755,$own='www'){
 		$path = dirname($pathStr);
 		@mkdir($path, $mod, true);
-		chown($path, $own);
+		@chown($path, $own);
 		if(!is_dir($path))return false;
 		else return true;
 	}
@@ -347,6 +404,7 @@ class FileUpload{
 	 * 由文件内容创建文件
 	 * @param unknown $image_data
 	 * @param string $ext
+	 * @return string file_path_name
 	 */
 	public static function createByImgData($image_data,$ext='jpg')
 	{

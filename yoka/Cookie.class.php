@@ -12,7 +12,7 @@ class Cookie{
 		private static $expire = 8640000; 	//默认cookie时间：100天
 		private static $domain = '';
 		private static $cookiepath = '/';
-		private static $cookiepre = 'YEPFV3';
+		public static $cookiepre = 'YEPFV3';
 
 
 		private function __construct($config)
@@ -83,11 +83,20 @@ class Cookie{
 			}
 		}
 
-		public static function del($name, $raw = false)
+		public static function del($name, $raw = false, $path = null, $domain = null)
 		{
 			if($raw)$cookie_name = $name;
 			else $cookie_name = self::$cookiepre.$name;
-			self::rawset($cookie_name, '', -3600);
+			if($domain){
+				self::rawset($cookie_name, '', -3600, $path, $domain);
+			}else{
+				//逐级域名删除
+				$obj_domain = explode('.', $_SERVER['HTTP_HOST']);
+				while(count($obj_domain) > 1){
+					self::rawset($cookie_name, '', -3600, $path, implode('.', $obj_domain));
+					array_shift($obj_domain);
+				}
+			}
 			$_COOKIE[$cookie_name] = '';
 			unset($_COOKIE[$cookie_name]);
 		}
@@ -121,6 +130,7 @@ class Cookie{
 		 */
 		public static function decompress($str, $key = 'V2'){
 			$t = explode('_|#', urldecode($str));
+			$arr = [];
 			foreach($t as $k=> $v){
 				if($k === 0)continue;
 				$arr[] = $v;
