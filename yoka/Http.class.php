@@ -435,9 +435,10 @@ class Http{
 	 * @param array $header
 	 * @param array $cookie
 	 * @param mixed $proxy
+	 * @param bool $form  按照form头格式
 	 * @return boolean|string
 	 */
-	public static function curlPost($url, $data=array(), $timeout_microsecond = 3000, $header = null, $cookie = null, $proxy = null){
+	public static function curlPost($url, $data=array(), $timeout_microsecond = 3000, $header = null, $cookie = null, $proxy = null, $form = null){
 		\yoka\Debug::log('curlPost', $url);
 		\yoka\Debug::log('curlPost:param', is_string($data)?$data:http_build_query($data));
 		$ch = curl_init(trim($url));
@@ -486,7 +487,11 @@ class Http{
 			if($p['user'])curl_setopt($ch, CURLOPT_PROXYUSERPWD, $p['user'] .':'. $p['pass']);
 		}
 
-		if (is_array($data)) {
+		if($form && !is_array($data)) {
+			//按form提交，需要还原为数组
+			parse_str($data, $tmpArray);
+			$data = $tmpArray?:[];
+		}elseif(!$form && is_array($data)){
 			$data = http_build_query($data);
 		}
 
@@ -583,7 +588,16 @@ class Http{
 		}
 
 	}
-
+	/**
+	 * Curl Post 别名（按form提交）
+	 * @param string $url
+	 * @param string|array $data 字符串不做处理
+	 * @param int $timeout_microsecond
+	 * @return boolean|string
+	 */
+	public static function curlForm($url, $data=array(), $timeout_microsecond = 3000, $header = null, $cookie = null, $proxy = null){
+		return self::curlPost($url, $data, $timeout_microsecond, $header, $cookie, $proxy, true);
+	}
 	/**
 	 * 使用Socket模拟HTTP请求
 	 * @param string $method GET/POST

@@ -205,6 +205,10 @@ class DB
 		{
 			$k = trim($k);
 			if($v === null) $s .= "`{$k}` = NULL,";
+			elseif(is_array($v)){
+				//自动转json 强制addslashes防止出错
+				$s .= '`'.$k . "` = '" . addslashes(json_encode($v, JSON_UNESCAPED_UNICODE)) . "',";
+			}
 			elseif($addslashes) $s .= '`'.$k . "` = '" . addslashes($v) . "',";
 			else $s .= '`'.$k . "` = '" . $v . "',";
 		}
@@ -580,13 +584,20 @@ class DB
 				$caller .= ' <- ' . $t[2]['file'].' , line:'.$t[2]['line'];
 				$caller .= ' <- ' . $t[3]['file'].' , line:'.$t[3]['line'];
 				$caller .= ' <- ' . $t[4]['file'].' , line:'.$t[4]['line'];
+			}elseif($t[3]){
+				$caller = $t[1]['file'].' , line:'.$t[1]['line'];
+				$caller .= ' <- ' . $t[2]['file'].' , line:'.$t[2]['line'];
+				$caller .= ' <- ' . $t[3]['file'].' , line:'.$t[3]['line'];
+			}elseif($t[2]){
+				$caller = $t[1]['file'].' , line:'.$t[1]['line'];
+				$caller .= ' <- ' . $t[2]['file'].' , line:'.$t[2]['line'];
 			}else{
 				$caller = $t[0]['file'].' , line:'.$t[0]['line'];
 				if($t[1]) $caller .= ' <- ' . $t[1]['file'].' , line:'.$t[1]['line'];
-				if($t[2]) $caller .= ' <- ' . $t[2]['file'].' , line:'.$t[2]['line'];
 			}
-			
+				
 			$string  = "#[".date('Y-m-d H:i:s')."] " . $sql . "\n";
+			$string .= " - " . $this->db->errorInfo()[2];
 			$string .= " - {$caller} ";
 			$string .= $result;
 			$string .= "\n";
@@ -693,6 +704,11 @@ class DB
 	 * @desc $creteria = array('del_flag'=>1)  //单一条件
 	 * @desc $creteria = array('del_flag'=>1, 'age'=>array('$lt',20)) //多条件默认用and连接
 	 * @desc $creteria = array('del_flag'=>1, '$or'=>array('begin_time'=>array('$lt'=>time()),'end_time'=>array('$gt'=>time())));
+	 * @desc $creteria = array('del_flag'=>1, 'state'=>['in'=>[3,5]]);
+	 * 
+	 * [已知缺陷] 
+	 * 1，条件中数组中主键不能重复（PHP限制）。例如： 'or'=>['state'=>3, 'state'=>5] PHP解析为 'or'=>['state'=>5]
+	 * 
 	 * @param array $creteria
 	 * @param boolean $trim 自动去除空白
 	 * @param boolean $strict 是否严格检查（非严格检查时，可省略$符）
@@ -717,7 +733,7 @@ class DB
 					$re[] = ' (' . self::_buildQuery($v, $trim, $strict, 'OR', $addslashes) . ') '; 
                 }else{
                 	reset($v);
-                	while(current($v)){
+                	while(1){
 		                //以下为单一条件
 		                $k2=key($v);$v2=$v[$k2];
 		                if($debug)Debug::log($k2,$v2);
@@ -734,10 +750,13 @@ class DB
 							$re[] = self::_buildCol($k) . " <= '$v2' "; 
 		                }elseif(strtolower($k2) === '$ne' || ($strict == false && strtolower($k2) === 'ne')){
 							$re[] = self::_buildCol($k) . " <> '$v2' "; 
+		                }elseif(strtolower($k2) === '$in' || ($strict == false && strtolower($k2) === 'in')){
+							foreach($v2 as $t=>$tt) $v2[$t] = "'".addslashes($tt)."'";
+		                	$re[] = self::_buildCol($k) . " in (" . implode(',', $v2) . ")"; 
 		                }else{
 		                	$re[] = self::_buildQuery($v, $trim, $strict, 'AND', $addslashes);
 		                }
-		                next($v);
+		                if(! next($v)) break;
                 	}
                 }
             }else{

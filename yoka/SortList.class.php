@@ -196,6 +196,15 @@ class SortList extends Queue
     	return $re;
     }
     /**
+     * 设置一个键的值(sortAdd同名函数)
+     * @param unknown $set
+     * @param unknown $name
+     * @param number $value
+     */
+    public function sortSet($set, $name, $value=0){
+    	return $this->sortAdd($set, $name, $value);
+    }
+    /**
      * 增加一个键的值
      * (如果$name不存在，则会自动创建，值为$inc)
      * @param string $set 集合名称
